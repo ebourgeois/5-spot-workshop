@@ -154,9 +154,18 @@ else
 fi
 kubectl cluster-info --context "$MGMT"
 
-echo "==> clusterctl init --infrastructure docker"
+echo "==> clusterctl init (CAPI providers PINNED to ${CLUSTERCTL_VERSION})"
 export CLUSTER_TOPOLOGY=true
-clusterctl init --infrastructure docker
+# Pin the PROVIDER versions, not just the clusterctl binary. `clusterctl init`
+# fetches the LATEST providers by default — that pulls CAPI v1.10.x, which changes
+# cluster.x-k8s.io/v1beta1 handling and leaves the 5-Spot-created worker Machine
+# stuck in Pending (Flag 1/2 never go Ready). 5-Spot v0.2.2 emits v1beta1, so we
+# must hold the providers on the v1.9.x line.
+clusterctl init \
+  --core "cluster-api:${CLUSTERCTL_VERSION}" \
+  --bootstrap "kubeadm:${CLUSTERCTL_VERSION}" \
+  --control-plane "kubeadm:${CLUSTERCTL_VERSION}" \
+  --infrastructure "docker:${CLUSTERCTL_VERSION}"
 for ns in capi-system capd-system capi-kubeadm-bootstrap-system capi-kubeadm-control-plane-system; do
   kubectl wait --for=condition=Available --timeout=300s -n "$ns" deploy --all
 done
@@ -191,6 +200,15 @@ kubectl --context "$MGMT" -n 5spot-system set image deployment/5spot-controller 
 kubectl --context "$MGMT" -n 5spot-system patch deployment/5spot-controller --type=strategic \
   -p '{"spec":{"template":{"spec":{"containers":[{"name":"controller","resources":{"requests":{"cpu":"10m","memory":"64Mi"}}}]}}}}' || true
 kubectl --context "$MGMT" -n 5spot-system rollout status deployment/5spot-controller --timeout=180s
+
+# ---- Part 1.4: machine-version-defaulter (5-Spot v0.2.2 + CAPI v1.9.x gap) --
+# 5-Spot doesn't set Machine.spec.version and the ScheduledMachine CRD has no field
+# for it, so the kubeadm worker bootstrap fails ("failed to parse kubernetes
+# version") and the worker hangs in Pending. This tiny controller stamps the
+# version on any Machine missing it, which unblocks bootstrap. See the manifest.
+echo "==> Deploying machine-version-defaulter (kubeadm worker-bootstrap fix)"
+kubectl --context "$MGMT" apply -f "$WORKDIR/machine-version-defaulter.yaml"
+kubectl --context "$MGMT" -n 5spot-system rollout status deployment/machine-version-defaulter --timeout=120s
 
 # ---- Part 2: workload cluster + CNI ----------------------------------------
 echo "==> Creating workload cluster dev-cluster"

@@ -8,7 +8,7 @@ REPO_URL ?= https://github.com/firestoned/5-spot-workshop
 # this in sync with the fork attendees launch from.
 CODESPACES_REPO ?= https://github.com/ebourgeois/5-spot-workshop
 
-.PHONY: help validate codespaces codespaces-url killercoda kind hard kind-down hard-down codespaces-down killercoda-down teardown flagboard flagboard-replay test test-live-kind test-live-k0smotron slides clean
+.PHONY: help validate codespaces codespaces-url killercoda iximiuz kind hard kind-down hard-down codespaces-down killercoda-down teardown flagboard flagboard-replay test test-live-kind test-live-k0smotron slides clean
 
 help: ## Show this menu
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "};{printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -39,6 +39,17 @@ killercoda: ## Validate both Killercoda scenarios and print wiring steps
 	@echo "          3) Creators → connect repo → add scenarios at:"
 	@echo "             workshop/5spot-ctf-capd    and    workshop/5spot-ctf-k0smotron"
 	@echo "          4) every git push auto-updates. Full guide: docs/killercoda-setup.md"
+
+iximiuz: ## Validate the iximiuz Labs content (skill path + 2 challenges) and print publish steps
+	./scripts/test-iximiuz.sh
+	@echo ""
+	@echo "Go live:  1) push this repo (public)   2) labctl auth login"
+	@echo "          3) from iximiuz/ , create once then push:"
+	@echo "             labctl content create skill-path 5-spot-ctf --dir skill-paths/5-spot-ctf"
+	@echo "             labctl content create challenge 5spot-ctf-capd --dir challenges/5spot-ctf-capd"
+	@echo "             labctl content create challenge 5spot-ctf-k0smotron --dir challenges/5spot-ctf-k0smotron"
+	@echo "             labctl content push <kind> <name> --dir <dir> --force   # on every update"
+	@echo "          4) resolve TODO(verify at publish) markers. Full guide: docs/iximiuz-setup.md"
 
 kind: ## Bring up the CAPD environment locally (facilitator rehearsal)
 	./scripts/5-spot-bootstrap.sh --env-tier kind

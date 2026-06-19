@@ -1,0 +1,91 @@
+# machine-version-defaulter — workaround for a 5-Spot v0.2.2 + CAPI v1.9.x gap.
+#
+# The kubeadm bootstrap controller needs Machine.spec.version to generate a worker
+# join (it parses the k8s version to pick the kubeadm API). 5-Spot v0.2.2's
+# ScheduledMachine has NO field to set Machine.spec.version, and never sets it — so
+# on the CAPD/kubeadm track the worker's bootstrap fails with
+#   "failed to parse kubernetes version \"\": strconv.ParseUint: parsing \"\": invalid syntax"
+# and the Machine is stuck Pending forever (Flag 1/2 never go Ready). The k0s track
+# is unaffected because K0sWorkerConfig carries its own version field.
+#
+# This tiny controller watches Machines and stamps spec.version on any that lack it,
+# which is exactly what unblocks bootstrap (verified: Pending -> Running in ~30s).
+# Remove it once 5-Spot sets Machine.spec.version (or exposes a version field).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: machine-version-defaulter
+  namespace: 5spot-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: machine-version-defaulter
+rules:
+  - apiGroups: ["cluster.x-k8s.io"]
+    resources: ["machines"]
+    verbs: ["get", "list", "watch", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: machine-version-defaulter
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: machine-version-defaulter
+subjects:
+  - kind: ServiceAccount
+    name: machine-version-defaulter
+    namespace: 5spot-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: machine-version-defaulter
+  namespace: 5spot-system
+  labels:
+    app: machine-version-defaulter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: machine-version-defaulter
+  template:
+    metadata:
+      labels:
+        app: machine-version-defaulter
+    spec:
+      serviceAccountName: machine-version-defaulter
+      containers:
+        - name: defaulter
+          # kindest/node ships kubectl + bash and is ALREADY loaded into this
+          # cluster by the pre-bake — no external registry pull (bitnami/kubectl
+          # was removed from Docker Hub). Keep the tag == the node image.
+          image: kindest/node:v1.31.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: MACHINE_VERSION
+              value: "v1.31.0"   # must match the control plane / kindest/node tag
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -uo pipefail
+              echo "machine-version-defaulter: ensuring Machine.spec.version=${MACHINE_VERSION}"
+              while true; do
+                kubectl get machines.cluster.x-k8s.io -A \
+                  -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}{" "}{.spec.version}{"\n"}{end}' \
+                | while read -r ns name ver; do
+                    [ -n "${ns:-}" ] || continue
+                    if [ -z "${ver:-}" ]; then
+                      echo "  -> patching ${ns}/${name} spec.version=${MACHINE_VERSION}"
+                      kubectl -n "$ns" patch machine "$name" --type=merge \
+                        -p "{\"spec\":{\"version\":\"${MACHINE_VERSION}\"}}" || true
+                    fi
+                  done
+                sleep 5
+              done
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi

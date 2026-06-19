@@ -89,7 +89,9 @@ make salt-flags SALT=OSFF26     # invalidate the public GitHub flags on event mo
 ```
 
 Full hosting runbooks: **[docs/killercoda-setup.md](docs/killercoda-setup.md)**
-(host both scenarios on Killercoda), **[docs/codespaces-setup-facilitator.md](docs/codespaces-setup-facilitator.md)**
+(host both scenarios on Killercoda), **[docs/iximiuz-setup.md](docs/iximiuz-setup.md)**
+(publish as a skill path of two challenges on iximiuz Labs),
+**[docs/codespaces-setup-facilitator.md](docs/codespaces-setup-facilitator.md)**
 (host the Medium tier on Codespaces — prebuilds, machine-type & cost policy), and
 **[leaderboard/README.md](leaderboard/README.md)**
 (scoreboard options, QR join, public/flaky-WiFi handling). The deck is in
