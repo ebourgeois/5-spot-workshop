@@ -13,6 +13,11 @@ apiVersion: kind.x-k8s.io/v1alpha4
 name: 5spot-mgmt
 nodes:
   - role: control-plane
+    # Pin the management-cluster k8s version. Without this, `kind create cluster`
+    # uses whatever the local kind binary defaults to (e.g. v1.35 on newer kind),
+    # which CAPI v1.9.5 isn't tested against and can flake during init. Match the
+    # workload/node pin (kindest/node:v1.31.0).
+    image: kindest/node:v1.31.0
     extraMounts:
       # CAPD talks to the host Docker daemon to create workload-cluster
       # containers as siblings of this node.

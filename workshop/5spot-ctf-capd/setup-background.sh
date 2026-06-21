@@ -178,12 +178,17 @@ docker pull "$FIVESPOT_IMAGE"
 # foreign-arch blobs ("content digest ... not found"). Save just this host's
 # platform to an archive and load that instead; fall back to the direct load.
 case "$(uname -m)" in aarch64|arm64) PLAT=linux/arm64;; *) PLAT=linux/amd64;; esac
+loaded=false
 if docker save --platform "$PLAT" "$FIVESPOT_IMAGE" -o /tmp/5spot-controller.tar 2>/dev/null; then
-  kind load image-archive /tmp/5spot-controller.tar --name 5spot-mgmt
+  if kind load image-archive /tmp/5spot-controller.tar --name 5spot-mgmt 2>/dev/null; then loaded=true; fi
   rm -f /tmp/5spot-controller.tar
-else
-  kind load docker-image "$FIVESPOT_IMAGE" --name 5spot-mgmt
 fi
+# Fallback: direct load. (macOS/colima's containerd image store sometimes makes
+# the archive import fail with "mismatched image rootfs and manifest layers".)
+if ! $loaded && kind load docker-image "$FIVESPOT_IMAGE" --name 5spot-mgmt 2>/dev/null; then loaded=true; fi
+# Last resort: don't abort — the image is public, so the node pulls it from ghcr
+# on deploy (imagePullPolicy IfNotPresent). The rollout wait below still gates.
+$loaded || echo "  ⚠ could not preload ${FIVESPOT_IMAGE} into kind (macOS/colima multi-arch quirk) — the node will pull it from ghcr"
 kubectl --context "$MGMT" apply -f $HOME/5-spot/deploy/crds/
 # Create the namespace first and wait for it to register. A single recursive
 # apply can submit namespaced objects (configmap/deployment) before the freshly
